@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: tracking_postgres
+    environment:
+      POSTGRES_USER: tracking
+      POSTGRES_PASSWORD: tracking123
+      POSTGRES_DB: trackingdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: tracking_influx
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: admin123
+      DOCKER_INFLUXDB_INIT_ORG: myorg
+      DOCKER_INFLUXDB_INIT_BUCKET: tracking
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: super-token-please-change
+    ports:
+      - "8087:8086"        
+    volumes:
+      - influxdata:/var/lib/influxdb2
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile   
+    container_name: tracking_backend
+    environment:
+      DATABASE_URL: postgresql://tracking:tracking123@postgres:5432/trackingdb
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - influxdb
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  influxdata:

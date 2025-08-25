@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Real-time Tracker</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+    #map { height: 70vh; border-radius: 10px; }
+    .toolbar { margin-bottom: 8px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eef; color: #223; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Real-time Tracker</h1>
+  <div class="toolbar">
+    <label><input type="checkbox" id="toggle-vehicles" /> Show Vehicles</label>
+    <label><input type="checkbox" id="toggle-weather" /> Show Weather</label>
+    <span class="badge">All popups OFF by default</span>
+  </div>
+
+  <div id="map"></div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    // ===== Map init =====
+    const map = L.map('map').setView([-6.2, 106.8], 6);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+
+    // ===== Layers (tidak ditambahkan saat init) =====
+    const vehicleLayer = L.layerGroup();
+    const weatherLayer = L.layerGroup();
+
+    // ===== State interval refresh =====
+    let vehicleRefreshTimer = null;
+
+    // ===== Util =====
+    function addOrUpdateMarker(layer, lat, lon, popupHtml) {
+      const m = L.marker([lat, lon]).bindPopup(popupHtml);
+      layer.addLayer(m);
+    }
+
+    // ===== Vehicles =====
+    async function fetchVehicles() {
+      try {
+        vehicleLayer.clearLayers();
+
+        // Ganti URL ini jika backend kamu beda host/port
+        const res = await fetch('http://127.0.0.1:8000/vehicles');
+        const vehicles = await res.json();
+
+        vehicles.forEach((v) => {
+          // Kompatibel: DB (flat fields) atau MOCK (v.position nested)
+          const pos = v.position || v;
+          const lat = pos?.lat, lon = pos?.lon;
+          if (lat == null || lon == null) return;
+
+          const popup = `
+            <b>${v.name || v.vehicle_id}</b><br>
+            Owner: ${v.owner ?? '-'}<br>
+            Status: ${pos.status ?? '-'}<br>
+            SOG: ${pos.sog ?? '-'}<br>
+            COG: ${pos.cog ?? '-'}<br>
+            TS: ${pos.ts ?? '-'}
+          `;
+          addOrUpdateMarker(vehicleLayer, lat, lon, popup);
+        });
+      } catch (e) {
+        console.error('fetchVehicles error:', e);
+      }
+    }
+
+    function startVehicleRefresh() {
+      if (vehicleRefreshTimer) return;
+      // refresh pertama langsung, kemudian interval
+      fetchVehicles();
+      vehicleRefreshTimer = setInterval(fetchVehicles, 5000);
+    }
+
+    function stopVehicleRefresh() {
+      if (vehicleRefreshTimer) {
+        clearInterval(vehicleRefreshTimer);
+        vehicleRefreshTimer = null;
+      }
+      vehicleLayer.clearLayers();
+    }
+
+    // ===== Weather (placeholder; nanti ganti ke API kamu) =====
+    async function fetchWeatherDemo() {
+      try {
+        weatherLayer.clearLayers();
+        // contoh dummy (nanti ganti panggil backend /weather/..)
+        const demo = [
+          { lat: -6.2, lon: 106.8, label: 'Sunny 30°C' },
+          { lat: -6.3, lon: 106.9, label: 'Cloudy 28°C' },
+        ];
+        demo.forEach((d) => {
+          L.circleMarker([d.lat, d.lon], {
+            radius: 8,
+            weight: 1,
+            fillOpacity: 0.5,
+          })
+            .bindPopup(`<b>Weather</b><br>${d.label}`)
+            .addTo(weatherLayer);
+        });
+      } catch (e) {
+        console.error('fetchWeather error:', e);
+      }
+    }
+
+    // ===== Toggle handlers =====
+    document
+      .getElementById('toggle-vehicles')
+      .addEventListener('change', (e) => {
+        if (e.target.checked) {
+          startVehicleRefresh();
+          vehicleLayer.addTo(map);
+        } else {
+          map.removeLayer(vehicleLayer);
+          stopVehicleRefresh();
+        }
+      });
+
+    document
+      .getElementById('toggle-weather')
+      .addEventListener('change', async (e) => {
+        if (e.target.checked) {
+          await fetchWeatherDemo();
+          weatherLayer.addTo(map);
+        } else {
+          map.removeLayer(weatherLayer);
+          weatherLayer.clearLayers();
+        }
+      });
+
+    // ===== Tidak ada layer yang aktif saat load (sesuai requirement) =====
+    // (Sengaja tidak memanggil fetchVehicles()/fetchWeatherDemo() di init)
+  </script>
+</body>
+</html>
